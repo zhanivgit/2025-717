@@ -12,10 +12,10 @@ float Pitch, Roll, Yaw;
 float g_target_pitch = 0.0f; // 目标俯仰角度
 
 // --- 内环PID控制器参数 ---
-float Kp_bal = 20, Ki_bal = 0, Kd_bal = 5; // 恢复Kp_bal，赋予直立环力量
+float Kp_bal = 30, Ki_bal = 0, Kd_bal = 5; // 恢复Kp_bal，赋予直立环力量
 
 // --- 外环PID控制器参数 ---
-float Kp_pos = 0.8, Ki_pos = 0, Kd_pos = 0.1; // 外环PID控制器的P、I、D参数
+float Kp_pos = 1.2, Ki_pos = 0.005, Kd_pos = 0.1; // 外环PID控制器的P、I、D参数
 
 long g_position_error_sum = 0; // 当前位置误差的累积和
 
@@ -50,13 +50,21 @@ int Balance_PID_Calc(float Angle)
 int Position_PID_Calc(int Encoder_L, int Encoder_R)
 {
     static long last_pos_error = 0;
+    static float pos_error_integral = 0; // 新增：位置误差的积分累加和
+    
     long current_pos = Encoder_L + Encoder_R;
     long pos_error = 0 - current_pos; // 计算当前位置误差
 
+    // --- 新增：积分计算与限幅 ---
+    pos_error_integral += pos_error;
+    // 积分限幅，防止积分饱和导致失控
+    if (pos_error_integral > 2000) pos_error_integral = 2000;
+    if (pos_error_integral < -2000) pos_error_integral = -2000;
+
     g_position_error_sum = pos_error; // 记录当前误差用于显示
 
-    // 位置误差的PD计算
-    int speed_correction = Kp_pos * pos_error + Kd_pos * (pos_error - last_pos_error);
+    // --- 将I项加入计算 ---
+    int speed_correction = Kp_pos * pos_error + Ki_pos * pos_error_integral + Kd_pos * (pos_error - last_pos_error);
     last_pos_error = pos_error; // 更新上次位置误差
 
     return speed_correction;

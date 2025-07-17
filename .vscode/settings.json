@@ -70,6 +70,7 @@
     "encoder.h": "c",
     "motor.h": "c",
     "math.h": "c",
-    "mpu6050.h": "c"
+    "mpu6050.h": "c",
+    "inv_mpu.h": "c"
   }
 }
