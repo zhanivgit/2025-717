@@ -65,6 +65,11 @@
   "C_Cpp_Runner.msvcSecureNoWarnings": false,
   "files.associations": {
     "*.markdown": "markdown",
-    "delay.h": "c"
+    "delay.h": "c",
+    "stm32f10x.h": "c",
+    "encoder.h": "c",
+    "motor.h": "c",
+    "math.h": "c",
+    "mpu6050.h": "c"
   }
 }

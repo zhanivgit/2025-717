@@ -1,31 +1,118 @@
-#include "stm32f10x.h"                  // Device header
+#include "stm32f10x.h"
 #include "Delay.h"
 #include "OLED.h"
 #include "MPU6050.h"
 #include "inv_mpu.h"
+#include "ENCODER.h"
+#include "Motor.h"
+#include "math.h"
 
-float Pitch,Roll,Yaw;								//������Ĭ�ϸ���ֵһ���������ǣ�ƫ����
-int16_t ax,ay,az,gx,gy,gz;							//���ٶȣ������ǽ��ٶ�
+// --- 定义俯仰、翻滚、偏航角度变量 ---
+float Pitch, Roll, Yaw;
+float g_target_pitch = 0.0f; // 目标俯仰角度
 
-u8 MPU_Get_Gyroscope(short *gx,short *gy,short *gz);
-u8 MPU_Get_Accelerometer(short *ax,short *ay,short *az);
+// --- 内环PID控制器参数 ---
+float Kp_bal = 10, Ki_bal = 0, Kd_bal = 5; // 内环PID控制器的P、I、D参数
+
+// --- 外环PID控制器参数 ---
+float Kp_pos = 0, Ki_pos = 0, Kd_pos = 0; // 外环PID控制器的P、I、D参数
+
+long g_position_error_sum = 0; // 当前位置误差的累积和
+
+/**
+  * @brief  内环PID控制器计算
+  * @param  Angle 当前俯仰角度
+  * @retval 返回速度调整值
+  */
+int Balance_PID_Calc(float Angle)
+{
+    static float Error_Last = 0, Error_Integral = 0;
+    float Error;
+    int Speed;
+
+    Error = g_target_pitch - Angle; // 计算当前俯仰角度与目标俯仰角度的误差
+
+    if(abs(Error) < 20) { Error_Integral += Error; } // 如果误差小于20，则累积误差
+    else { Error_Integral = 0; } // 否则将误差累积和重置为0
+
+    Speed = Kp_bal * Error + Ki_bal * Error_Integral + Kd_bal * (Error - Error_Last); // 计算速度调整值
+    Error_Last = Error; // 更新上次误差
+
+    return Speed;
+}
+
+/**
+  * @brief  外环PID控制器计算
+  * @param  Encoder_L 左侧编码器读数
+  * @param  Encoder_R 右侧编码器读数
+  * @retval 返回速度修正值
+  */
+int Position_PID_Calc(int Encoder_L, int Encoder_R)
+{
+    static long last_pos_error = 0;
+    long current_pos = Encoder_L + Encoder_R;
+    long pos_error = 0 - current_pos; // 计算当前位置误差
+
+    g_position_error_sum += pos_error; // 更新位置误差累积和
+
+    // 位置误差的PD计算
+    int speed_correction = Kp_pos * pos_error + Kd_pos * (pos_error - last_pos_error);
+    last_pos_error = pos_error; // 更新上次位置误差
+
+    return speed_correction;
+}
 
 int main(void)
 {
-	OLED_Init();
-	MPU6050_Init();
-	MPU6050_DMP_Init();
-	
-	while (1)
-	{
-		MPU6050_DMP_Get_Data(&Pitch,&Roll,&Yaw);				//��ȡ��̬��Ϣ(����ƫ������Ʈ������������)
-		MPU_Get_Gyroscope(&gx,&gy,&gz);
-		MPU_Get_Accelerometer(&ax,&ay,&az);
+    // 1. 初始化外设
+    OLED_Init();
+    MPU6050_Init();
+    MPU6050_DMP_Init();
+    Motor_Init();
+    Encoder_Init();
 
-		OLED_ShowString(1, 1, "Pitch:");
-		OLED_ShowString(2, 1, "Roll:");
-		OLED_ShowSignedNum(1, 7, Pitch, 5);
-		OLED_ShowSignedNum(2, 7, Roll, 5);
-		// OLED_ShowSignedNum(4, 1, Yaw, 5);
-	}
+    // 延时500ms等待MPU6050稳定
+    Delay_ms(500);
+    // 获取初始的俯仰角度
+    MPU6050_DMP_Get_Data(&g_target_pitch, &Roll, &Yaw);
+
+    // 2. 清除编码器计数
+    Clear_Encoder_Count();
+
+    int encoder_l, encoder_r;
+    int speed_from_balance, speed_from_position, final_speed;
+
+    while (1)
+    {
+        // 获取传感器数据
+        MPU6050_DMP_Get_Data(&Pitch, &Roll, &Yaw);
+        encoder_l = Read_Left_Encoder(); // 读取左侧编码器值
+        encoder_r = Read_Right_Encoder(); // 读取右侧编码器值
+
+        // PID控制器计算
+        // 内环PID控制器计算速度
+        speed_from_balance = Balance_PID_Calc(Pitch);
+
+        // 外环PID控制器计算速度修正
+        speed_from_position = Position_PID_Calc(encoder_l, encoder_r);
+
+        // 合并速度调整和修正
+        final_speed = speed_from_balance + speed_from_position;
+
+        // 速度限制
+        if(final_speed > 1000) final_speed = 1000;
+        if(final_speed < -1000) final_speed = -1000;
+
+        // 设置电机速度
+        MotorA_SetSpeed(-final_speed);
+        MotorB_SetSpeed(-final_speed);
+
+        // OLED显示
+        OLED_ShowString(1, 1, "Pitch:");
+        OLED_ShowSignedNum(1, 8, (int)Pitch, 4);
+        OLED_ShowString(2, 1, "Speed:");
+        OLED_ShowSignedNum(2, 8, final_speed, 4);
+        OLED_ShowString(3, 1, "PosE:"); // Position Error
+        OLED_ShowSignedNum(3, 7, g_position_error_sum, 5);
+    }
 }

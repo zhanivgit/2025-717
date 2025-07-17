@@ -41,3 +41,5 @@
 .\objects\main.o: D:\51\ARM\ARMCC\Bin\..\include\stdlib.h
 .\objects\main.o: .\Hardware\Mpu6050\MPU6050_I2C.h
 .\objects\main.o: .\Hardware\Mpu6050\inv_mpu.h
+.\objects\main.o: .\Hardware\ENCODER.h
+.\objects\main.o: .\Hardware\Motor.h
